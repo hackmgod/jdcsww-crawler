@@ -40,12 +40,19 @@ jobs:
     - name: Build with PyInstaller (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        pyinstaller --onefile --name=JDCCrawler --console --clean crawl_production_enhanced.py
+        pyinstaller --onefile --name=JDCCrawler --console --clean --log-level=WARN crawl_production_enhanced.py
 
     - name: Build with PyInstaller (macOS/Linux)
       if: matrix.os != 'windows-latest'
       run: |
-        pyinstaller --onefile --name=JDCCrawler --console --clean crawl_production_enhanced.py
+        pyinstaller --onefile --name=JDCCrawler --console --clean --log-level=WARN crawl_production_enhanced.py
+
+    - name: List build output
+      run: |
+        echo "=== Build Directory ==="
+        ls -la dist/
+        echo "=== Build Directory Exists ==="
+        test -d dist && echo "YES" || echo "NO"
 
     - name: Create output directory
       run: |
@@ -56,20 +63,20 @@ jobs:
       run: |
         copy dist\JDCCrawler.exe package\
         copy EXE使用说明.txt package\
-        copy README.txt package\
+        echo "JDCCrawler Windows版本" > package\README.txt
 
     - name: Copy files (macOS/Linux)
       if: matrix.os != 'windows-latest'
       run: |
         cp dist/JDCCrawler package/
         cp EXE使用说明.txt package/
-        cp README.txt package/
+        echo "JDCCrawler macOS/Linux版本" > package/README.txt
 
     - name: Create archive (Windows)
       if: matrix.os == 'windows-latest'
+      shell: pwsh
       run: |
-        cd package
-        7z a -tzip ../JDCCrawler-windows.zip *
+        Compress-Archive -Path package/* -DestinationPath JDCCrawler-windows.zip -Force
 
     - name: Create archive (macOS/Linux)
       if: matrix.os != 'windows-latest'
