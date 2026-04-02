@@ -1,0 +1,56 @@
+name: Build Executable (Simple)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+      fail-fast: false
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install PyInstaller
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+
+    - name: Install dependencies
+      run: |
+        pip install openpyxl
+
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller --onefile --name=JDCCrawler --console --noconfirm crawl_production_enhanced.py
+
+    - name: Check build output
+      run: |
+        echo "Build directory:"
+        ls -la dist/ || echo "dist directory not found"
+
+    - name: Upload artifact (Windows)
+      if: matrix.os == 'windows-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: JDCCrawler-windows
+        path: dist/JDCCrawler.exe
+
+    - name: Upload artifact (macOS)
+      if: matrix.os == 'macos-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: JDCCrawler-macos
+        path: dist/JDCCrawler

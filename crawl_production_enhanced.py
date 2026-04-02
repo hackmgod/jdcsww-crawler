@@ -24,7 +24,7 @@ from http.cookiejar import CookieJar
 
 
 class EnhancedProductionCrawler:
-    """生产环境增强爬虫"""
+    """生产环境增强爬虫 - 安全版"""
 
     def __init__(self):
         self.base_url = "https://www.jdcsww.com"
@@ -41,6 +41,18 @@ class EnhancedProductionCrawler:
         self.state_file = os.path.join(self.output_dir, 'crawler_state.json')
         self.data_file = os.path.join(self.output_dir, 'all_vehicles_complete.json')
         self.excel_file = os.path.join(self.output_dir, 'vehicles_complete_all.xlsx')
+
+        # ⚡ 反爬虫延迟配置（安全版）
+        self.detail_delay_min = 10.0      # 详情页之间最小延迟（秒）
+        self.detail_delay_max = 20.0      # 详情页之间最大延迟（秒）
+        self.batch_delay_min = 15.0       # 批次间最小延迟（秒）
+        self.batch_delay_max = 30.0       # 批次间最大延迟（秒）
+        self.rest_interval = 20           # 每N个批次休息
+        self.rest_duration = 60           # 休息时长（秒）
+
+        # 统计信息
+        self.request_count = 0
+        self.blocked_count = 0
 
         # 配置日志
         self._setup_logger()
@@ -76,6 +88,80 @@ class EnhancedProductionCrawler:
         self.logger.info(f"日志文件: {log_file}")
         self.logger.info("=" * 70)
 
+    def _get_chrome_headers(self) -> Dict[str, str]:
+        """生成真实Chrome浏览器的完整请求头"""
+        return {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'identity',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
+            'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"macOS"',
+            'Cache-Control': 'max-age=0',
+        }
+
+    def warm_up(self):
+        """预热机制 - 仅访问首页，避免触发反爬"""
+        self.logger.info("=" * 70)
+        self.logger.info("🔥 预热中 - 模拟真实用户访问模式")
+        self.logger.info("=" * 70)
+
+        try:
+            # 1. 访问首页获取初始Cookie
+            self.logger.info("📍 [1/2] 访问首页获取Cookie...")
+            homepage = self.fetch_with_session(self.base_url, referer=None, max_retries=2)
+            if homepage:
+                warm_delay = random.uniform(3, 6)
+                self.logger.info(f"✓ 首页访问成功，等待 {warm_delay:.1f} 秒...")
+                time.sleep(warm_delay)
+            else:
+                self.logger.warning("✗ 首页访问失败，继续尝试")
+
+            # 2. 最终停留（不访问空白查询页，避免触发封禁）
+            final_delay = random.uniform(2, 5)
+            self.logger.info(f"📍 [2/2] 预热完成，最终等待 {final_delay:.1f} 秒...")
+            time.sleep(final_delay)
+
+            self.logger.info("✅ 预热完成！开始爬取...")
+            self.logger.info("💡 跳过空白查询页，直接访问带参数的URL")
+            self.logger.info("=" * 70)
+            print()
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ 预热过程出现异常: {e}")
+            self.logger.info("继续尝试爬取...")
+
+    def is_blocked(self, html: str) -> bool:
+        """检测是否被封禁/拦截"""
+        if not html:
+            return True
+
+        block_indicators = [
+            '非正常访问',
+            '爬取数据嫌疑',
+            '访问过于频繁',
+            '您的访问已被限制',
+            '请稍后再试',
+            '系统检测到异常',
+            'Anti-Spam',
+            '验证码',
+            'captcha',
+        ]
+
+        for indicator in block_indicators:
+            if indicator in html:
+                self.logger.warning(f"🚫 检测到封禁指示: '{indicator}'")
+                return True
+
+        return False
+
     def load_state(self) -> Dict:
         """加载爬虫状态"""
         if os.path.exists(self.state_file):
@@ -107,16 +193,11 @@ class EnhancedProductionCrawler:
             json.dump(vehicles, f, ensure_ascii=False, indent=2)
 
     def fetch_with_session(self, url: str, referer: str = None, max_retries: int = 3) -> Optional[str]:
-        """使用会话获取页面"""
+        """使用会话获取页面 - 增强版（完整请求头+封禁检测）"""
         for attempt in range(max_retries):
             try:
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'zh-CN,zh;q=0.9',
-                    'Accept-Encoding': 'identity',
-                    'Connection': 'keep-alive',
-                }
+                # 使用完整的Chrome请求头
+                headers = self._get_chrome_headers()
 
                 if referer:
                     headers['Referer'] = referer
@@ -125,23 +206,29 @@ class EnhancedProductionCrawler:
                 with self.opener.open(req, timeout=30) as response:
                     html = response.read().decode('utf-8', errors='ignore')
 
-                    if '非正常访问' in html or '爬取数据嫌疑' in html:
+                    # 检测是否被封禁
+                    if self.is_blocked(html):
+                        self.blocked_count += 1
                         if attempt < max_retries - 1:
-                            self.logger.warning(f"被拦截，重试 {attempt + 1}/{max_retries}")
-                            time.sleep(5)
+                            retry_delay = 20 + (attempt * 10)
+                            self.logger.warning(f"🚫 被拦截，{retry_delay}秒后重试 ({attempt + 1}/{max_retries})")
+                            time.sleep(retry_delay)
                             continue
                         else:
+                            self.logger.error("❌ 多次重试失败，IP可能已被封禁")
+                            self.logger.error("💡 建议：等待15-30分钟后重试，或更换网络")
                             return None
 
+                    self.request_count += 1
                     return html
 
             except Exception as e:
                 if attempt < max_retries - 1:
-                    retry_delay = 5 + (attempt * 5)
-                    self.logger.warning(f"网络错误，{retry_delay}秒后重试: {e}")
+                    retry_delay = 10 + (attempt * 10)
+                    self.logger.warning(f"⚠️ 网络错误，{retry_delay}秒后重试: {e}")
                     time.sleep(retry_delay)
                 else:
-                    self.logger.error(f"获取失败: {e}")
+                    self.logger.error(f"❌ 获取失败: {e}")
                     return None
 
         return None
@@ -500,7 +587,7 @@ class EnhancedProductionCrawler:
             'ggxh': '',
             'ggpc': str(batch),
             'zwpp': '',
-            'clmc': '1',
+            'clmc': '1',  # 车辆类型分类码（一个l）
             'fdjxh': '',
             'qymc': '',
             'cph': '',
@@ -530,10 +617,12 @@ class EnhancedProductionCrawler:
             return None
 
         try:
-            html = self.fetch_with_session(detail_url, referer=vehicle.get('详情链接', ''))
+            # 使用列表页URL作为referer
+            list_url = f"{self.base_url}/qcggs"
+            html = self.fetch_with_session(detail_url, referer=list_url)
 
-            if not html or '非正常访问' in html or '爬取数据嫌疑' in html:
-                self.logger.warning(f"详情页被拦截: {vehicle.get('公告编号', 'unknown')}")
+            if not html:
+                self.logger.warning(f"详情页获取失败: {vehicle.get('公告编号', 'unknown')}")
                 return None
 
             # 解析详情页
@@ -565,14 +654,22 @@ class EnhancedProductionCrawler:
         self.logger.info("=" * 70)
 
         print("=" * 70)
-        print("增强版生产环境爬虫")
+        print("🛡️ 增强版生产环境爬虫 - 安全模式")
         print("=" * 70)
         print(f"批次范围: {start_batch} - {end_batch}")
         print(f"爬取详情: {'是 (完整83字段)' if crawl_detail else '否 (仅列表页6字段)'}")
         print(f"开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"日志文件: {self.log_file}")
+        print()
+        print("⚙️ 安全配置:")
+        print(f"  - 详情页延迟: {self.detail_delay_min}-{self.detail_delay_max} 秒")
+        print(f"  - 批次间延迟: {self.batch_delay_min}-{self.batch_delay_max} 秒")
+        print(f"  - 休息策略: 每 {self.rest_interval} 批次休息 {self.rest_duration} 秒")
         print("=" * 70)
         print()
+
+        # 🔥 预热：先访问首页建立会话
+        self.warm_up()
 
         # 加载状态
         state = self.load_state()
@@ -620,9 +717,10 @@ class EnhancedProductionCrawler:
                             if detail_data:
                                 batch_vehicles_complete.append(detail_data)
 
-                            # 详情页之间延迟
+                            # 详情页之间延迟（更长，避免被封）
                             if idx < len(vehicles):
-                                delay = random.uniform(3, 6)
+                                delay = random.uniform(self.detail_delay_min, self.detail_delay_max)
+                                print(f"    ⏱️ 等待 {delay:.1f} 秒...")
                                 time.sleep(delay)
 
                         if batch_vehicles_complete:
@@ -654,17 +752,20 @@ class EnhancedProductionCrawler:
                         progress = (completed_tasks / total_tasks) * 100
                         print(f"    进度: {completed_tasks}/{total_tasks} ({progress:.1f}%) | 累计: {len(all_vehicles)} 辆")
 
-                    # 批次间延迟
-                    base_delay = random.uniform(5, 10)
+                    # 批次间延迟（更长，更随机）
+                    base_delay = random.uniform(self.batch_delay_min, self.batch_delay_max)
+                    print(f"  ⏱️ 批次间延迟 {base_delay:.1f} 秒...")
                     time.sleep(base_delay)
 
-                    # 定期休息
-                    if completed_tasks > 0 and completed_tasks % 50 == 0:
-                        rest_time = 30
-                        self.logger.info(f"已爬取{completed_tasks}个任务，休息{rest_time}秒...")
-                        print(f"\n  💦 已爬取{completed_tasks}个任务，休息{rest_time}秒...")
-                        time.sleep(rest_time)
-                        print(f"  ✓ 休息完成，继续爬取\n")
+                    # 定期休息（更频繁，更长时间）
+                    if completed_tasks > 0 and completed_tasks % self.rest_interval == 0:
+                        self.logger.info(f"已爬取{completed_tasks}个任务，休息{self.rest_duration}秒...")
+                        print(f"\n{'='*70}")
+                        print(f"💦 已爬取 {completed_tasks} 个任务")
+                        print(f"⏸️  休息 {self.rest_duration} 秒（避免触发反爬）")
+                        print(f"{'='*70}\n")
+                        time.sleep(self.rest_duration)
+                        print(f"✓ 休息完成，继续爬取\n")
 
                 except KeyboardInterrupt:
                     print("\n\n⚠️  用户中断！保存当前进度...")
