@@ -47,7 +47,17 @@ jobs:
       run: |
         pyinstaller --onefile --name=JDCCrawler --console --clean --log-level=WARN crawl_production_enhanced.py
 
-    - name: List build output
+    - name: List build output (Windows)
+      if: matrix.os == 'windows-latest'
+      shell: pwsh
+      run: |
+        echo "=== Build Directory ==="
+        dir dist\
+        echo "=== Build Directory Exists ==="
+        if (Test-Path dist) { echo "YES" } else { echo "NO" }
+
+    - name: List build output (macOS/Linux)
+      if: matrix.os != 'windows-latest'
       run: |
         echo "=== Build Directory ==="
         ls -la dist/
