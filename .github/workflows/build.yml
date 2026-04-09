@@ -52,7 +52,7 @@ jobs:
       shell: pwsh
       run: |
         echo "=== Build Directory ==="
-        dir dist\
+        Get-ChildItem dist
         echo "=== Build Directory Exists ==="
         if (Test-Path dist) { echo "YES" } else { echo "NO" }
 
