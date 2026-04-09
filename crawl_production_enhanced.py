@@ -3,11 +3,16 @@
 """
 生产环境增强爬虫 - 完整版
 功能:
-1. 爬取所有批次(1-403)的新能源车辆完整数据
+1. 爬取所有批次(1-403)的新能源车辆完整数据（34种车辆类型）
 2. 包含83个完整字段（基本信息+三电参数+图片）
 3. 支持增量保存和断点续传
 4. 导出为Excel格式
 5. 下载车辆图片
+
+配置说明:
+- 车辆类型: 34种新能源汽车子类型（纯电动、混合动力、插电式、增程式、换电式等）
+- 燃料类型: 留空（不限制）
+- 批次范围: 1-403（全部批次）
 """
 
 import urllib.request
@@ -632,8 +637,8 @@ class EnhancedProductionCrawler:
                         normalized_failed.append({
                             'task_key': item,
                             'batch': int(item.split('-')[0]) if '-' in item else 0,
-                            'fuel_type': item.split('-')[1] if '-' in item else '',
-                            'fuel_type_name': '',
+                            'vehicle_type': item.split('-')[1] if '-' in item else '',
+                            'vehicle_type_name': '',
                             'fail_time': '',
                             'fail_reason': '旧格式记录',
                             'error_type': 'LegacyFormat'
@@ -793,7 +798,7 @@ class EnhancedProductionCrawler:
 
         return None
 
-    def parse_list_page(self, html: str, batch: int, fuel_type_name: str) -> List[Dict]:
+    def parse_list_page(self, html: str, batch: int, vehicle_type_name: str) -> List[Dict]:
         """解析列表页 - 提取基本信息"""
         vehicles = []
 
@@ -804,7 +809,7 @@ class EnhancedProductionCrawler:
         for idx, (detail_link, car_name) in enumerate(vehicle_matches, 1):
             vehicle = {
                 '批次': batch,
-                '燃料类型': fuel_type_name,
+                '燃料类型': vehicle_type_name,
                 '车辆名称': car_name.strip(),
                 '详情链接': f"{self.base_url}{detail_link}",
             }
@@ -1365,32 +1370,32 @@ class EnhancedProductionCrawler:
 
         return images
 
-    def crawl_single_batch_list(self, batch: int, fuel_type_code: str, fuel_type_name: str) -> List[Dict]:
+    def crawl_single_batch_list(self, batch: int, vehicle_type_code: str, vehicle_type_name: str) -> List[Dict]:
         """爬取单个批次的列表页"""
         url = f"{self.base_url}/qcggs"
         params = {
             'ggxh': '',
             'ggpc': str(batch),
             'zwpp': '',
-            'clmc': '1',  # 车辆类型分类码（一个l）
+            'clmc': vehicle_type_code,  # 车辆类型代码（34种之一）
             'fdjxh': '',
             'qymc': '',
             'cph': '',
-            'rylx': fuel_type_code,
+            'rylx': '',  # 燃料类型留空
             'viewtype': '0'
         }
         list_url = f"{url}?{urllib.parse.urlencode(params)}"
 
-        self.logger.info(f"爬取列表页: 批次{batch} [{fuel_type_name}]")
+        self.logger.info(f"爬取列表页: 批次{batch} [{vehicle_type_name}]")
 
         html = self.fetch_with_session(list_url)
 
         if not html:
-            self.logger.warning(f"批次{batch} [{fuel_type_name}] - 获取列表页失败")
+            self.logger.warning(f"批次{batch} [{vehicle_type_name}] - 获取列表页失败")
             return []
 
-        vehicles = self.parse_list_page(html, batch, fuel_type_name)
-        self.logger.info(f"批次{batch} [{fuel_type_name}] - 找到 {len(vehicles)} 辆")
+        vehicles = self.parse_list_page(html, batch, vehicle_type_name)
+        self.logger.info(f"批次{batch} [{vehicle_type_name}] - 找到 {len(vehicles)} 辆")
 
         return vehicles
 
@@ -1468,13 +1473,54 @@ class EnhancedProductionCrawler:
         print(f"📊 已有数据: {len(all_vehicles)} 辆")
         print(f"✓ 已完成批次: {len(state['completed_batches'])}")
 
-        # 燃料类型
-        fuel_types = [
-            {'code': 'C', 'name': '纯电动'},
-            {'code': 'O', 'name': '混合动力'},
+        # 车辆类型（34种新能源汽车）
+        vehicle_types = [
+            # 纯电动系列（15种）
+            {'code': '1', 'name': '纯电动汽车'},
+            {'code': '294', 'name': '纯电动客车'},
+            {'code': '295', 'name': '纯电动救护车'},
+            {'code': '296', 'name': '纯电动载货车'},
+            {'code': '297', 'name': '纯电动洒水车'},
+            {'code': '300', 'name': '纯电动教练车'},
+            {'code': '284', 'name': '换电式纯电动轿车'},
+            {'code': '285', 'name': '换电式纯电动自卸汽车'},
+            {'code': '286', 'name': '换电式纯电动厢式运输车'},
+            {'code': '287', 'name': '换电式纯电动多用途乘用车'},
+            {'code': '288', 'name': '换电式纯电动自卸式垃圾车'},
+            {'code': '289', 'name': '换电式纯电动半挂牵引车'},
+            {'code': '290', 'name': '换电式纯电动混凝土搅拌运输车'},
+            {'code': '291', 'name': '换电式纯电动福祉多用途乘用车'},
+            {'code': '182', 'name': '两用燃料汽车'},
+            # 混合动力系列（4种）
+            {'code': '2', 'name': '混合动力电动汽车'},
+            {'code': '3', 'name': '插电式混合动力汽车'},
+            {'code': '4', 'name': '增程式混合动力汽车'},
+            {'code': '5', 'name': '燃料式电池汽车'},
+            # 插电式混合动力专用车型（14种）
+            {'code': '301', 'name': '插电式混合动力冷藏车'},
+            {'code': '302', 'name': '插电式混合动力宣传车'},
+            {'code': '303', 'name': '插电式混合动力清障车'},
+            {'code': '304', 'name': '插电式混合动力扫路车'},
+            {'code': '305', 'name': '插电式混合动力检测车'},
+            {'code': '306', 'name': '插电式混合动力救护车'},
+            {'code': '307', 'name': '插电式混合动力运钞车'},
+            {'code': '308', 'name': '插电式混合动力房车'},
+            {'code': '309', 'name': '插电式混合动力城市客车'},
+            {'code': '317', 'name': '插电式混合动力垃圾车'},
+            {'code': '318', 'name': '插电式混合动力牵引车'},
+            {'code': '319', 'name': '插电式混合动力载货车'},
+            {'code': '320', 'name': '插电式混合动力汽车起重机'},
+            {'code': '321', 'name': '插电式混合动力厢式运输车'},
+            {'code': '322', 'name': '插电式混合动力混凝土泵车'},
+            {'code': '323', 'name': '插电式混合动力绿化喷洒车'},
+            {'code': '324', 'name': '插电式混合动力多用途乘用车'},
+            {'code': '325', 'name': '甲醇插电式增程混合动力车'},
+            {'code': '326', 'name': '插电式混合动力仓栅式运输车'},
+            {'code': '327', 'name': '插电式混合动力混凝土搅拌运输车'},
+            {'code': '329', 'name': '插电式混合动力自卸汽车'},
         ]
 
-        total_tasks = (end_batch - start_batch + 1) * len(fuel_types)
+        total_tasks = (end_batch - start_batch + 1) * len(vehicle_types)
         completed_tasks = len(state['completed_batches'])
 
         # 🔥 随机化批次顺序（避免顺序访问被检测）
@@ -1502,24 +1548,24 @@ class EnhancedProductionCrawler:
                 self.save_state(state)
                 return all_vehicles
 
-            for fuel_type in fuel_types:
-                task_key = f"{batch}-{fuel_type['code']}"
+            for vehicle_type in vehicle_types:
+                task_key = f"{batch}-{vehicle_type['code']}"
 
                 # 跳过已完成
                 if task_key in state['completed_batches']:
                     continue
 
                 try:
-                    # 1. 爬取列表页
-                    vehicles = self.crawl_single_batch_list(batch, fuel_type['code'], fuel_type['name'])
+                    # 1. 爬取列表页（燃料类型留空）
+                    vehicles = self.crawl_single_batch_list(batch, vehicle_type['code'], vehicle_type['name'])
 
                     if not vehicles:
                         # ✅ 详细失败记录
                         fail_record = {
                             'task_key': task_key,
                             'batch': batch,
-                            'fuel_type': fuel_type['code'],
-                            'fuel_type_name': fuel_type['name'],
+                            'vehicle_type': vehicle_type['code'],
+                            'vehicle_type_name': vehicle_type['name'],
                             'fail_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                             'fail_reason': '列表页无数据',
                             'error_type': 'NoData'
@@ -1576,8 +1622,8 @@ class EnhancedProductionCrawler:
                             fail_record = {
                                 'task_key': task_key,
                                 'batch': batch,
-                                'fuel_type': fuel_type['code'],
-                                'fuel_type_name': fuel_type['name'],
+                                'vehicle_type': vehicle_type['code'],
+                                'vehicle_type_name': vehicle_type['name'],
                                 'fail_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                 'fail_reason': '详情页无数据',
                                 'error_type': 'NoDetailData'
@@ -1655,8 +1701,8 @@ class EnhancedProductionCrawler:
                     fail_record = {
                         'task_key': task_key,
                         'batch': batch,
-                        'fuel_type': fuel_type['code'],
-                        'fuel_type_name': fuel_type['name'],
+                        'vehicle_type': vehicle_type['code'],
+                        'vehicle_type_name': vehicle_type['name'],
                         'fail_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                         'fail_reason': str(e)[:200],  # 限制长度
                         'error_type': type(e).__name__
