@@ -1476,7 +1476,7 @@ class EnhancedProductionCrawler:
         # 车辆类型（34种新能源汽车）
         vehicle_types = [
             # 纯电动系列（15种）
-            {'code': '1', 'name': '纯电动汽车'},
+            # {'code': '1', 'name': '纯电动汽车'},  # ❌ 已爬取，暂时注释
             {'code': '294', 'name': '纯电动客车'},
             {'code': '295', 'name': '纯电动救护车'},
             {'code': '296', 'name': '纯电动载货车'},
